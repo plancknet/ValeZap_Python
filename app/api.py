@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import monotonic
 from uuid import uuid4
 
 from flask import Blueprint, abort, current_app, jsonify, request
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from .database import session_scope
 from .external import WebhookError, dispatch_to_backend
 from .models import ChatSession, Message, Sender
-from .security import normalise_player, validate_message, is_end_of_conversation
+from .security import is_end_of_conversation, normalise_player, validate_message
 
 api_bp = Blueprint("api", __name__)
 
@@ -34,6 +35,15 @@ def create_session():
     with session_scope() as db:
         chat_session = ChatSession(session_token=session_token, player_id=requested_player)
         db.add(chat_session)
+
+    current_app.logger.info(
+        "Sessao criada",
+        extra={
+            "event": "session.created",
+            "session_token": session_token,
+            "player": requested_player,
+        },
+    )
 
     return (
         jsonify(
@@ -78,6 +88,16 @@ def list_messages():
             "is_active": chat_session.is_active,
         }
 
+    current_app.logger.debug(
+        "Mensagens listadas",
+        extra={
+            "event": "messages.listed",
+            "session_token": session_token,
+            "count": len(messages),
+            "active": response["is_active"],
+        },
+    )
+
     return jsonify(response)
 
 
@@ -121,17 +141,56 @@ def send_message():
         )
         db.add(outgoing)
 
+    current_app.logger.info(
+        "Mensagem do player registrada",
+        extra={
+            "event": "message.player.stored",
+            "session_token": session_token,
+            "player": player,
+        },
+    )
+
+    start = monotonic()
     try:
         backend_response = dispatch_to_backend(session_token, player, message_text)
     except WebhookError as exc:
+        current_app.logger.error(
+            "Falha ao contatar backend",
+            extra={
+                "event": "backend.dispatch.failed",
+                "session_token": session_token,
+                "player": player,
+                "error": str(exc),
+            },
+        )
         abort(502, str(exc))
+    duration = monotonic() - start
 
     backend_message = backend_response.get("mensagem")
     if not isinstance(backend_message, str):
+        current_app.logger.error(
+            "Resposta invalida do backend",
+            extra={
+                "event": "backend.response.invalid",
+                "session_token": session_token,
+                "player": player,
+                "payload": backend_response,
+            },
+        )
         abort(502, "Resposta invalida do backend")
 
     backend_message = backend_message.strip()
     received_at = datetime.now(timezone.utc)
+
+    current_app.logger.info(
+        "Resposta recebida do backend",
+        extra={
+            "event": "backend.response.received",
+            "session_token": session_token,
+            "player": player,
+            "duration_ms": round(duration * 1000, 2),
+        },
+    )
 
     valezap_payload = {
         "sender": Sender.VALEZAP.value,
@@ -159,6 +218,16 @@ def send_message():
         if ended:
             chat_session.is_active = False
             chat_session.ended_at = received_at
+
+    if ended:
+        current_app.logger.info(
+            "Sessao encerrada pelo backend",
+            extra={
+                "event": "session.ended",
+                "session_token": session_token,
+                "player": player,
+            },
+        )
 
     response_payload = {
         "player_message": player_payload,

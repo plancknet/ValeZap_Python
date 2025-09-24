@@ -1,5 +1,8 @@
 ﻿from __future__ import annotations
 
+import logging
+from logging import Logger
+
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
@@ -16,6 +19,7 @@ def create_app(config_object: type | None = None) -> Flask:
     config_cls = config_object or load_config()
     app.config.from_object(config_cls)
 
+    _configure_logging(app)
     init_engine(app)
 
     app.register_blueprint(ui_bp)
@@ -26,6 +30,23 @@ def create_app(config_object: type | None = None) -> Flask:
     _register_response_headers(app)
 
     return app
+
+
+def _configure_logging(app: Flask) -> None:
+    level_name = str(app.config.get("LOG_LEVEL", "INFO")).upper()
+    level = getattr(logging, level_name, logging.INFO)
+
+    logger: Logger = app.logger
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter(
+            "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+    logger.setLevel(level)
+    logger.debug("Logging configured", extra={"component": "bootstrap"})
 
 
 def _register_error_handlers(app: Flask) -> None:

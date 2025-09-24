@@ -37,6 +37,7 @@ def load_config() -> type:
         MAX_MESSAGE_LENGTH: int = str_to_int(os.environ.get("VALEZAP_MAX_MESSAGE_LENGTH"), 700)
         MIN_MESSAGE_LENGTH: int = 1
         SESSION_TTL: timedelta = timedelta(hours=str_to_int(os.environ.get("VALEZAP_SESSION_HOURS"), 2))
+        LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
         ALLOWED_ORIGINS: tuple[str, ...] = tuple(
             origin.strip()
             for origin in os.environ.get("VALEZAP_ALLOWED_ORIGINS", "").split(",")
@@ -44,7 +45,3 @@ def load_config() -> type:
         )
 
     return Config
-
-
-
-

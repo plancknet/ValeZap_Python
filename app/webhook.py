@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from .database import session_scope
 from .models import ChatSession, Message, Sender
-from .security import normalise_player, is_end_of_conversation
+from .security import is_end_of_conversation, normalise_player
 
 webhook_bp = Blueprint("webhook", __name__)
 
@@ -22,6 +22,13 @@ def receive_backend_message():
     expected_api_key = current_app.config["WEBHOOK_API_KEY"]
     provided_api_key = request.headers.get("X-API-Key")
     if expected_api_key and provided_api_key != expected_api_key:
+        current_app.logger.warning(
+            "Webhook rejeitado por API key invalida",
+            extra={
+                "event": "webhook.rejected",
+                "reason": "invalid_api_key",
+            },
+        )
         abort(401, "API key invalida")
 
     payload = request.get_json(silent=True) or {}
@@ -61,5 +68,15 @@ def receive_backend_message():
         if ended:
             chat_session.is_active = False
             chat_session.ended_at = received_at
+
+    current_app.logger.info(
+        "Mensagem recebida via webhook",
+        extra={
+            "event": "webhook.message.received",
+            "session_token": session_token,
+            "player": player,
+            "ended": ended,
+        },
+    )
 
     return jsonify({"status": "ok", "ended": ended}), 200
