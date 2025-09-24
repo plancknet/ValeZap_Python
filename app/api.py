@@ -97,6 +97,13 @@ def send_message():
     except ValueError as exc:
         abort(400, str(exc))
 
+    sent_at = datetime.now(timezone.utc)
+    player_payload = {
+        "sender": Sender.PLAYER.value,
+        "content": message_text,
+        "created_at": sent_at.isoformat(),
+    }
+
     with session_scope(session_identifier=session_token) as db:
         chat_session = _load_session(db, session_token)
         if chat_session is None:
@@ -106,7 +113,6 @@ def send_message():
         if not chat_session.is_active:
             abort(409, "Sessao encerrada")
 
-        sent_at = datetime.now(timezone.utc)
         outgoing = Message(
             session_token=session_token,
             sender=Sender.PLAYER,
@@ -115,17 +121,33 @@ def send_message():
         )
         db.add(outgoing)
 
-        try:
-            backend_response = dispatch_to_backend(session_token, player, message_text)
-        except WebhookError as exc:
-            abort(502, str(exc))
+    try:
+        backend_response = dispatch_to_backend(session_token, player, message_text)
+    except WebhookError as exc:
+        abort(502, str(exc))
 
-        backend_message = backend_response.get("mensagem")
-        if not isinstance(backend_message, str):
-            abort(502, "Resposta invalida do backend")
+    backend_message = backend_response.get("mensagem")
+    if not isinstance(backend_message, str):
+        abort(502, "Resposta invalida do backend")
 
-        backend_message = backend_message.strip()
-        received_at = datetime.now(timezone.utc)
+    backend_message = backend_message.strip()
+    received_at = datetime.now(timezone.utc)
+
+    valezap_payload = {
+        "sender": Sender.VALEZAP.value,
+        "content": backend_message,
+        "created_at": received_at.isoformat(),
+    }
+
+    ended = is_end_of_conversation(backend_message)
+
+    with session_scope(session_identifier=session_token) as db:
+        chat_session = _load_session(db, session_token)
+        if chat_session is None:
+            abort(404, "Sessao nao encontrada")
+        if chat_session.player_id != player:
+            abort(403, "Player nao autorizado para esta sessao")
+
         incoming = Message(
             session_token=session_token,
             sender=Sender.VALEZAP,
@@ -134,23 +156,14 @@ def send_message():
         )
         db.add(incoming)
 
-        ended = is_end_of_conversation(backend_message)
         if ended:
             chat_session.is_active = False
             chat_session.ended_at = received_at
 
-        response_payload = {
-            "player_message": {
-                "sender": outgoing.sender.value,
-                "content": outgoing.content,
-                "created_at": sent_at.isoformat(),
-            },
-            "valezap_message": {
-                "sender": incoming.sender.value,
-                "content": incoming.content,
-                "created_at": received_at.isoformat(),
-            },
-            "ended": ended,
-        }
+    response_payload = {
+        "player_message": player_payload,
+        "valezap_message": valezap_payload,
+        "ended": ended,
+    }
 
     return jsonify(response_payload), 201
