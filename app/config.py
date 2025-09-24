@@ -25,7 +25,7 @@ def load_config() -> type:
         SECRET_KEY: str = os.environ.get("SECRET_KEY", "valezap-dev-secret")
         DATABASE_URL: str = os.environ.get(
             "DATABASE_URL",
-            "postgresql+psycopg://postgres:postgres@localhost:5432/valezap",
+            "postgresql+psycopg://postgres:Mrs36861480!@evolution_postgres_python:5432/postgres_python",
         )
         REMOTE_WEBHOOK_URL: str = os.environ.get(
             "VALEZAP_BACKEND_URL",
@@ -44,3 +44,4 @@ def load_config() -> type:
         )
 
     return Config
+
