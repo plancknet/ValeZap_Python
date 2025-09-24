@@ -26,8 +26,8 @@ pip install -r requirements.txt
 Crie o banco de dados e aplique as migrações manuais:
 
 ```sql
-CREATE DATABASE valezap;
-\c valezap
+CREATE DATABASE postgres_python;
+\\\\c postgres_python
 \i migrations/001_init.sql;
 ```
 
@@ -38,7 +38,7 @@ CREATE DATABASE valezap;
 | Nome | Descrição | Default |
 |------|-----------|---------|
 | `SECRET_KEY` | Chave para cookies/CSRF | `valezap-dev-secret` |
-| `DATABASE_URL` | URL do PostgreSQL compatível com SQLAlchemy | `postgresql+psycopg://postgres:postgres@localhost:5432/valezap` |
+| `DATABASE_URL` | URL do PostgreSQL compatível com SQLAlchemy | `postgresql+psycopg://postgres:postgres@localhost:5432/postgres_python` |
 | `VALEZAP_BACKEND_URL` | Webhook remoto para disparar mensagens | URL do enunciado |
 | `VALEZAP_BACKEND_API_KEY` | API Key opcional enviada ao backend remoto (header `X-API-Key`) | vazio |
 | `VALEZAP_WEBHOOK_API_KEY` | Chave obrigatória para validar chamadas recebidas em `/webhook/vale` | `change-me` |
@@ -109,3 +109,6 @@ Procfile
 - Adicionar testes automatizados (PyTest) simulando o fluxo de mensagens.
 - Criar pipeline CI para linting (ruff/flake8) e execução das migrações.
 - Publicar a aplicação em um serviço (Railway, Render, etc.) com Postgres gerenciado.
+
+
+

@@ -45,3 +45,5 @@ def load_config() -> type:
 
     return Config
 
+
+
