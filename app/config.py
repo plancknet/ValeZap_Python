@@ -29,7 +29,7 @@ def load_config() -> type:
         )
         REMOTE_WEBHOOK_URL: str = os.environ.get(
             "VALEZAP_BACKEND_URL",
-            "https://quizzgpt-n8n.jhbg9t.easypanel.host/webhook/11648d55-4d9c-4015-a1f6-b9b173cd1765",
+            "https://n8n-n8n-webhook.jhbg9t.easypanel.host/webhook/34ae601d-ead7-491e-9bbc-f246089ee5e6",
         )
         REMOTE_WEBHOOK_TIMEOUT: float = float(os.environ.get("VALEZAP_BACKEND_TIMEOUT", "15"))
         REMOTE_WEBHOOK_API_KEY: str | None = os.environ.get("VALEZAP_BACKEND_API_KEY")
@@ -44,6 +44,7 @@ def load_config() -> type:
         )
 
     return Config
+
 
 
 
