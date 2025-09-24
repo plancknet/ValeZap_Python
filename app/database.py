@@ -46,9 +46,9 @@ def session_scope(session_identifier: str | None = None) -> Iterator:
     session = _SessionFactory()
     try:
         if session_identifier:
-            session.execute(text("SET app.current_session_id = :session_id"), {"session_id": session_identifier})
+            session.execute(text("SELECT set_config('app.current_session_id', :session_id, true)"), {"session_id": session_identifier})
         else:
-            session.execute(text("RESET app.current_session_id"))
+            session.execute(text("SELECT set_config('app.current_session_id', NULL, true)"))
         yield session
         session.commit()
     except Exception:
