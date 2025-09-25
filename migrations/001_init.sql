@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
 CREATE TABLE IF NOT EXISTS messages (
     id BIGSERIAL PRIMARY KEY,
     session_token TEXT NOT NULL REFERENCES chat_sessions (session_token) ON DELETE CASCADE,
-    sender TEXT NOT NULL CHECK (sender IN ('player', 'valezap')),
+    sender TEXT NOT NULL CHECK (sender IN ('player', 'valezap') AND sender = lower(sender)),
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -119,7 +119,7 @@ def send_message():
 
     sent_at = datetime.now(timezone.utc)
     player_payload = {
-        "sender": Sender.PLAYER.value,
+        "sender": Sender.PLAYER.value.lower(),
         "content": message_text,
         "created_at": sent_at.isoformat(),
     }
@@ -193,7 +193,7 @@ def send_message():
     )
 
     valezap_payload = {
-        "sender": Sender.VALEZAP.value,
+        "sender": Sender.VALEZAP.value.lower(),
         "content": backend_message,
         "created_at": received_at.isoformat(),
     }
@@ -236,6 +236,7 @@ def send_message():
     }
 
     return jsonify(response_payload), 201
+
 
 
 
