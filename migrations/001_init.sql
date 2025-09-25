@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
 CREATE TABLE IF NOT EXISTS messages (
     id BIGSERIAL PRIMARY KEY,
     session_token TEXT NOT NULL REFERENCES chat_sessions (session_token) ON DELETE CASCADE,
-    sender TEXT NOT NULL CHECK (sender IN ('player', 'valezap') AND sender = lower(sender)),
+    sender TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -44,5 +44,7 @@ DROP POLICY IF EXISTS messages_insert ON messages;
 CREATE POLICY messages_insert ON messages
     FOR INSERT
     WITH CHECK (session_token = current_setting('app.current_session_id', true));
+
+
 
 
