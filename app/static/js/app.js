@@ -1,9 +1,10 @@
-﻿(() => {
-  const bodyDataset = document.body?.dataset || {};
+(() => {
+  const bodyDataset = (document.body && document.body.dataset) || {};
   const config = {
     maxMessageLength: Number.parseInt(bodyDataset.maxMessageLength || '700', 10),
     sessionTtlSeconds: Number.parseInt(bodyDataset.sessionTtl || '7200', 10),
   };
+
   const chatLog = document.getElementById('chat-log');
   const phonePattern = /^[1-9]\d{7,14}$/;
   const messageForm = document.getElementById('message-form');
@@ -19,7 +20,7 @@
     }
     const cleaned = String(raw).trim();
     const digits = cleaned.replace(/\D/g, '');
-    if (!digits || digits.startsWith('0')) {
+    if (!digits || digits.charAt(0) === '0') {
       return null;
     }
     return phonePattern.test(digits) ? digits : null;
@@ -27,20 +28,21 @@
 
   function generatePlayerId() {
     const countryCode = '55';
-    if (window.crypto?.getRandomValues) {
+    if (window.crypto && window.crypto.getRandomValues) {
       const buffer = new Uint32Array(2);
       window.crypto.getRandomValues(buffer);
-      const localPart = (buffer[0] % 1_000_000_0000).toString().padStart(10, '0');
+      const localPart = (buffer[0] % 10000000000).toString().padStart(10, '0');
       const suffix = (buffer[1] % 100).toString().padStart(2, '0');
-      const candidate = `${countryCode}${localPart}${suffix}`.slice(0, 15);
+      const candidate = (countryCode + localPart + suffix).slice(0, 15);
       const valid = normalisePlayerId(candidate);
       if (valid) {
         return valid;
       }
     }
-    const fallback = `${countryCode}${Date.now().toString().slice(-10)}`;
+    const fallback = (countryCode + Date.now().toString().slice(-10)).slice(0, 15);
     return normalisePlayerId(fallback) || '5511999999999';
   }
+
   const storageKey = 'valezap-session';
   let sessionToken = null;
   let playerId = null;
@@ -59,7 +61,9 @@
   function applyFormatting(raw) {
     let safe = escapeHtml(raw);
 
-    safe = safe.replace(/```([\s\S]+?)```/g, (_, code) => `<pre><code>${code}</code></pre>`);
+    safe = safe.replace(/```([\s\S]+?)```/g, function (_, code) {
+      return '<pre><code>' + code + '</code></pre>';
+    });
     safe = safe.replace(/`([^`]+?)`/g, '<code>$1</code>');
     safe = safe.replace(/\*(.+?)\*/g, '<strong>$1</strong>');
     safe = safe.replace(/_(.+?)_/g, '<em>$1</em>');
@@ -78,32 +82,32 @@
   }
 
   function ensureTemplate() {
-    if (!template?.content) {
-      throw new Error('Template de mensagem não encontrado');
+    if (!(template && template.content)) {
+      throw new Error('Template de mensagem nao encontrado');
     }
     return template.content.firstElementChild;
   }
 
-  function appendMessage({ sender, content, created_at: createdAt }) {
+  function appendMessage(message) {
     const baseTemplate = ensureTemplate();
     const clone = baseTemplate.cloneNode(true);
-    const bubble = clone.classList?.contains('message') ? clone : clone.querySelector('.message');
+    const bubble = clone.classList.contains('message') ? clone : clone.querySelector('.message');
 
     if (!bubble) {
-      throw new Error('Estrutura do template de mensagem inválida');
+      throw new Error('Estrutura do template de mensagem invalida');
     }
 
     const messageContent = bubble.querySelector('.message-content');
     const messageTime = bubble.querySelector('.message-time');
 
-    const messageClass = sender === 'player' ? 'message--player' : 'message--valezap';
+    const messageClass = message.sender === 'player' ? 'message--player' : 'message--valezap';
     bubble.classList.add(messageClass);
 
     if (messageContent) {
-      messageContent.innerHTML = applyFormatting(content);
+      messageContent.innerHTML = applyFormatting(message.content);
     }
     if (messageTime) {
-      messageTime.textContent = formatTime(createdAt);
+      messageTime.textContent = formatTime(message.created_at);
     }
 
     chatLog.appendChild(clone);
@@ -111,14 +115,14 @@
     return bubble;
   }
 
-  function updateStatus(text, type = 'info') {
+  function updateStatus(text, type) {
     if (!text) {
       formStatus.textContent = '';
       formStatus.className = 'form-status';
       return;
     }
     formStatus.textContent = text;
-    formStatus.className = `form-status form-status--${type}`;
+    formStatus.className = 'form-status form-status--' + (type || 'info');
   }
 
   function setConnectionState(state) {
@@ -144,12 +148,19 @@
     updateStatus('Conversa encerrada. Obrigado!', 'success');
   }
 
-  function getPlayerFromUrl() {\n    const params = new URLSearchParams(window.location.search);\n    const player = params.get('player');\n    return normalisePlayerId(player);\n  }\n    return null;
+  function getPlayerFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return normalisePlayerId(params.get('player'));
   }
 
-  function persistPlayerInUrl(player) {\n    const normalised = normalisePlayerId(player);\n    if (!normalised) {\n      return;\n    }\n    const url = new URL(window.location.href);\n    url.searchParams.set('player', normalised);\n    window.history.replaceState({}, '', url);\n  }\n
-
-    return `player-${Math.random().toString(36).slice(2, 10)}`;
+  function persistPlayerInUrl(player) {
+    const normalised = normalisePlayerId(player);
+    if (!normalised) {
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('player', normalised);
+    window.history.replaceState({}, '', url);
   }
 
   function restoreCachedSession(player) {
@@ -176,25 +187,29 @@
         };
       }
     } catch (error) {
-      console.warn('Não foi possível restaurar sessão cacheada', error);
-      sessionStorage.removeItem(storageKey);
-    }
-    return null;
-  }
-        return cached;
-      }
-    } catch (error) {
-      console.warn('Não foi possível restaurar sessão cacheada', error);
+      console.warn('Nao foi possivel restaurar sessao cacheada', error);
       sessionStorage.removeItem(storageKey);
     }
     return null;
   }
 
-  function cacheSession(session) {\n    const normalised = normalisePlayerId(session?.player);\n    if (!normalised) {\n      sessionStorage.removeItem(storageKey);\n      return;\n    }\n    sessionStorage.setItem(storageKey, JSON.stringify({\n      player: normalised,\n      session_token: session.session_token,\n      expires_at: session.expires_at,\n    }));\n  }\n
+  function cacheSession(session) {
+    const normalised = normalisePlayerId(session && session.player);
+    if (!normalised) {
+      sessionStorage.removeItem(storageKey);
+      return;
+    }
+    sessionStorage.setItem(storageKey, JSON.stringify({
+      player: normalised,
+      session_token: session.session_token,
+      expires_at: session.expires_at,
+    }));
+  }
+
   async function ensureSession(player) {
     const targetPlayer = normalisePlayerId(player);
     if (!targetPlayer) {
-      throw new Error('Identificador de player inválido');
+      throw new Error('Identificador de player invalido');
     }
 
     const cached = restoreCachedSession(targetPlayer);
@@ -210,7 +225,7 @@
     });
 
     if (!response.ok) {
-      throw new Error('Não foi possível iniciar a sessão');
+      throw new Error('Nao foi possivel iniciar a sessao');
     }
 
     const data = await response.json();
@@ -225,14 +240,18 @@
   }
 
   async function loadHistory() {
-    if (!sessionToken) return;
-    const response = await fetch(`/api/messages?session_token=${encodeURIComponent(sessionToken)}`);
+    if (!sessionToken) {
+      return;
+    }
+    const response = await fetch('/api/messages?session_token=' + encodeURIComponent(sessionToken));
     if (!response.ok) {
       throw new Error('Falha ao carregar mensagens anteriores');
     }
     const payload = await response.json();
     chatLog.innerHTML = '';
-    payload.messages.forEach((message) => appendMessage(message));
+    payload.messages.forEach(function (message) {
+      appendMessage(message);
+    });
     if (payload.is_active === false) {
       endConversation();
     }
@@ -240,7 +259,7 @@
 
   function autoResizeTextarea() {
     messageInput.style.height = 'auto';
-    messageInput.style.height = `${Math.min(messageInput.scrollHeight, 180)}px`;
+    messageInput.style.height = Math.min(messageInput.scrollHeight, 180) + 'px';
   }
 
   async function handleSubmit(event) {
@@ -263,7 +282,11 @@
     lockInput();
     updateStatus('Enviando...', 'info');
 
-    const playerMessage = { sender: 'player', content: rawMessage, created_at: new Date().toISOString() };
+    const playerMessage = {
+      sender: 'player',
+      content: rawMessage,
+      created_at: new Date().toISOString(),
+    };
     const pendingMessage = appendMessage(playerMessage);
     messageInput.value = '';
     autoResizeTextarea();
@@ -307,10 +330,10 @@
         unlockInput();
       }
     } catch (error) {
-      if (pendingMessage?.remove) {
+      if (pendingMessage && pendingMessage.remove) {
         pendingMessage.remove();
       }
-      updateStatus('Não foi possível entregar a mensagem. Tente novamente.', 'error');
+      updateStatus('Nao foi possivel entregar a mensagem. Tente novamente.', 'error');
       console.error(error);
       unlockInput();
     }
@@ -342,7 +365,7 @@
     } catch (error) {
       console.error('Falha ao inicializar o ValeZap', error);
       setConnectionState('offline');
-      updateStatus('Não foi possível iniciar a conversa. Recarregue a página.', 'error');
+      updateStatus('Nao foi possivel iniciar a conversa. Recarregue a pagina.', 'error');
       lockInput();
     }
   }
@@ -351,13 +374,3 @@
   messageInput.addEventListener('input', handleInput);
   window.addEventListener('load', bootstrap);
 })();
-
-
-
-
-
-
-
-
-
-
