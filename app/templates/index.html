@@ -13,7 +13,7 @@
       rel="stylesheet"
     />
   </head>
-  <body>
+  <body data-max-message-length="{{ config['MAX_MESSAGE_LENGTH'] }}" data-session-ttl="{{ config['SESSION_TTL'].total_seconds() | int }}">
     <div class="chat-wrapper">
       <header class="chat-header">
         <div class="chat-avatar" aria-hidden="true">VZ</div>
@@ -50,13 +50,7 @@
         <time class="message-time"></time>
       </article>
     </template>
-
-    <script>
-      window.VALEZAP_CONFIG = {
-        maxMessageLength: {{ config['MAX_MESSAGE_LENGTH'] }},
-        sessionTtlSeconds: {{ config['SESSION_TTL'].total_seconds() | int }},
-      };
-    </script>
     <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
   </body>
 </html>
+

@@ -1,5 +1,5 @@
 ﻿(() => {
-  const config = window.VALEZAP_CONFIG || {};
+  const bodyDataset = document.body?.dataset || {};\n  const config = {\n    maxMessageLength: Number.parseInt(bodyDataset.maxMessageLength || '700', 10),\n    sessionTtlSeconds: Number.parseInt(bodyDataset.sessionTtl || '7200', 10),\n  };
   const chatLog = document.getElementById('chat-log');
   const messageForm = document.getElementById('message-form');
   const messageInput = document.getElementById('message-input');
@@ -54,19 +54,28 @@
   function appendMessage({ sender, content, created_at: createdAt }) {
     const baseTemplate = ensureTemplate();
     const clone = baseTemplate.cloneNode(true);
-    const bubble = clone.querySelector('.message');
-    const messageContent = clone.querySelector('.message-content');
-    const messageTime = clone.querySelector('.message-time');
+    const bubble = clone.classList?.contains('message') ? clone : clone.querySelector('.message');
+
+    if (!bubble) {
+      throw new Error('Estrutura do template de mensagem inválida');
+    }
+
+    const messageContent = bubble.querySelector('.message-content');
+    const messageTime = bubble.querySelector('.message-time');
 
     const messageClass = sender === 'player' ? 'message--player' : 'message--valezap';
     bubble.classList.add(messageClass);
 
-    messageContent.innerHTML = applyFormatting(content);
-    messageTime.textContent = formatTime(createdAt);
+    if (messageContent) {
+      messageContent.innerHTML = applyFormatting(content);
+    }
+    if (messageTime) {
+      messageTime.textContent = formatTime(createdAt);
+    }
 
     chatLog.appendChild(clone);
     chatLog.scrollTop = chatLog.scrollHeight;
-    return clone;
+    return bubble;
   }
 
   function updateStatus(text, type = 'info') {
@@ -302,3 +311,5 @@
   messageInput.addEventListener('input', handleInput);
   window.addEventListener('load', bootstrap);
 })();
+
+

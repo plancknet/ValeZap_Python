@@ -66,6 +66,7 @@ def _register_response_headers(app: Flask) -> None:
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'",
+            "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'",
         )
         return response
+
