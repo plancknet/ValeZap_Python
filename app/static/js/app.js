@@ -5,12 +5,30 @@
     sessionTtlSeconds: Number.parseInt(bodyDataset.sessionTtl || '7200', 10),
   };
   const chatLog = document.getElementById('chat-log');
+  const phonePattern = /^[1-9]\\d{7,14}$/;
   const messageForm = document.getElementById('message-form');
   const messageInput = document.getElementById('message-input');
   const sendButton = messageForm.querySelector('.send-button');
   const formStatus = document.getElementById('form-status');
   const connectionStatus = document.getElementById('connection-status');
   const template = document.getElementById('message-template');
+  function normalisePlayerId(raw) {
+    if (!raw) {
+      return null;
+    }
+    const cleaned = String(raw).trim();
+    const digits = cleaned.replace(/\D/g, '');
+    if (!digits || digits[0] === '0') {
+      return null;
+    }
+    return phonePattern.test(digits) ? digits : null;
+  }
+
+
+    }
+    const fallback = 55.slice(0, 13);
+    return normalisePlayerId(fallback) || '5511999999999';
+  }
 
   const storageKey = 'valezap-session';
   let sessionToken = null;
@@ -115,40 +133,43 @@
     updateStatus('Conversa encerrada. Obrigado!', 'success');
   }
 
-  function getPlayerFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    const player = params.get('player');
-    if (player && /^[A-Za-z0-9_-]{1,64}$/.test(player)) {
-      return player;
-    }
-    return null;
+  function getPlayerFromUrl() {\n    const params = new URLSearchParams(window.location.search);\n    const player = params.get('player');\n    return normalisePlayerId(player);\n  }\n    return null;
   }
 
-  function persistPlayerInUrl(player) {
-    const url = new URL(window.location.href);
-    url.searchParams.set('player', player);
-    window.history.replaceState({}, '', url);
-  }
+  function persistPlayerInUrl(player) {\n    const normalised = normalisePlayerId(player);\n    if (!normalised) {\n      return;\n    }\n    const url = new URL(window.location.href);\n    url.searchParams.set('player', normalised);\n    window.history.replaceState({}, '', url);\n  }\n
 
-  function generatePlayerId() {
-    if (window.crypto?.randomUUID) {
-      return window.crypto.randomUUID();
-    }
     return `player-${Math.random().toString(36).slice(2, 10)}`;
   }
 
   function restoreCachedSession(player) {
     try {
       const raw = sessionStorage.getItem(storageKey);
-      if (!raw) return null;
+      if (!raw) {
+        return null;
+      }
       const cached = JSON.parse(raw);
-      if (cached.player !== player) return null;
+      const cachedPlayer = normalisePlayerId(cached.player);
+      if (!cachedPlayer || cachedPlayer !== player) {
+        return null;
+      }
       if (typeof cached.expires_at === 'string' && cached.session_token) {
         const expires = new Date(cached.expires_at);
         if (Number.isNaN(expires.getTime()) || expires < new Date()) {
           sessionStorage.removeItem(storageKey);
           return null;
         }
+        return {
+          player: cachedPlayer,
+          session_token: cached.session_token,
+          expires_at: cached.expires_at,
+        };
+      }
+    } catch (error) {
+      console.warn('Não foi possível restaurar sessão cacheada', error);
+      sessionStorage.removeItem(storageKey);
+    }
+    return null;
+  }
         return cached;
       }
     } catch (error) {
@@ -158,12 +179,14 @@
     return null;
   }
 
-  function cacheSession(session) {
-    sessionStorage.setItem(storageKey, JSON.stringify(session));
-  }
-
+  function cacheSession(session) {\n    const normalised = normalisePlayerId(session?.player);\n    if (!normalised) {\n      sessionStorage.removeItem(storageKey);\n      return;\n    }\n    sessionStorage.setItem(storageKey, JSON.stringify({\n      player: normalised,\n      session_token: session.session_token,\n      expires_at: session.expires_at,\n    }));\n  }\n
   async function ensureSession(player) {
-    const cached = restoreCachedSession(player);
+    const targetPlayer = normalisePlayerId(player);
+    if (!targetPlayer) {
+      throw new Error('Identificador de player inválido');
+    }
+
+    const cached = restoreCachedSession(targetPlayer);
     if (cached) {
       sessionToken = cached.session_token;
       return cached;
@@ -172,7 +195,7 @@
     const response = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ player }),
+      body: JSON.stringify({ player: targetPlayer }),
     });
 
     if (!response.ok) {
@@ -182,7 +205,7 @@
     const data = await response.json();
     sessionToken = data.session_token;
     const sessionData = {
-      player: data.player,
+      player: normalisePlayerId(data.player) || targetPlayer,
       session_token: data.session_token,
       expires_at: data.expires_at,
     };
@@ -297,6 +320,8 @@
 
       setConnectionState('conectando...');
       const sessionData = await ensureSession(playerId);
+      playerId = sessionData.player;
+      persistPlayerInUrl(playerId);
       setConnectionState('online');
       await loadHistory();
 
@@ -315,3 +340,12 @@
   messageInput.addEventListener('input', handleInput);
   window.addEventListener('load', bootstrap);
 })();
+
+
+
+
+
+
+
+
+

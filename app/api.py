@@ -10,7 +10,7 @@ from sqlalchemy import select
 from .database import session_scope
 from .external import WebhookError, dispatch_to_backend
 from .models import ChatSession, Message, Sender
-from .security import is_end_of_conversation, normalise_player, validate_message
+from .security import generate_player_identifier, is_end_of_conversation, normalise_player, validate_message
 
 api_bp = Blueprint("api", __name__)
 
@@ -26,7 +26,7 @@ def create_session():
     requested_player = normalise_player(payload.get("player"))
 
     if not requested_player:
-        requested_player = uuid4().hex
+        requested_player = generate_player_identifier()
 
     session_token = uuid4().hex
     now = datetime.now(timezone.utc)
@@ -236,3 +236,6 @@ def send_message():
     }
 
     return jsonify(response_payload), 201
+
+
+
