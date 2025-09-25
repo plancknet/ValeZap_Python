@@ -302,5 +302,3 @@
   messageInput.addEventListener('input', handleInput);
   window.addEventListener('load', bootstrap);
 })();
-
-
