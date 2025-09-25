@@ -5,31 +5,42 @@
     sessionTtlSeconds: Number.parseInt(bodyDataset.sessionTtl || '7200', 10),
   };
   const chatLog = document.getElementById('chat-log');
-  const phonePattern = /^[1-9]\\d{7,14}$/;
+  const phonePattern = /^[1-9]\d{7,14}$/;
   const messageForm = document.getElementById('message-form');
   const messageInput = document.getElementById('message-input');
   const sendButton = messageForm.querySelector('.send-button');
   const formStatus = document.getElementById('form-status');
   const connectionStatus = document.getElementById('connection-status');
   const template = document.getElementById('message-template');
+
   function normalisePlayerId(raw) {
     if (!raw) {
       return null;
     }
     const cleaned = String(raw).trim();
     const digits = cleaned.replace(/\D/g, '');
-    if (!digits || digits[0] === '0') {
+    if (!digits || digits.startsWith('0')) {
       return null;
     }
     return phonePattern.test(digits) ? digits : null;
   }
 
-
+  function generatePlayerId() {
+    const countryCode = '55';
+    if (window.crypto?.getRandomValues) {
+      const buffer = new Uint32Array(2);
+      window.crypto.getRandomValues(buffer);
+      const localPart = (buffer[0] % 1_000_000_0000).toString().padStart(10, '0');
+      const suffix = (buffer[1] % 100).toString().padStart(2, '0');
+      const candidate = `${countryCode}${localPart}${suffix}`.slice(0, 15);
+      const valid = normalisePlayerId(candidate);
+      if (valid) {
+        return valid;
+      }
     }
-    const fallback = 55.slice(0, 13);
+    const fallback = `${countryCode}${Date.now().toString().slice(-10)}`;
     return normalisePlayerId(fallback) || '5511999999999';
   }
-
   const storageKey = 'valezap-session';
   let sessionToken = null;
   let playerId = null;
@@ -340,6 +351,7 @@
   messageInput.addEventListener('input', handleInput);
   window.addEventListener('load', bootstrap);
 })();
+
 
 
 
