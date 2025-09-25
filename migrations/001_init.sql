@@ -45,3 +45,4 @@ CREATE POLICY messages_insert ON messages
     FOR INSERT
     WITH CHECK (session_token = current_setting('app.current_session_id', true));
 
+
