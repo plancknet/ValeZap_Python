@@ -1,5 +1,9 @@
 ﻿(() => {
-  const bodyDataset = document.body?.dataset || {};\n  const config = {\n    maxMessageLength: Number.parseInt(bodyDataset.maxMessageLength || '700', 10),\n    sessionTtlSeconds: Number.parseInt(bodyDataset.sessionTtl || '7200', 10),\n  };
+  const bodyDataset = document.body?.dataset || {};
+  const config = {
+    maxMessageLength: Number.parseInt(bodyDataset.maxMessageLength || '700', 10),
+    sessionTtlSeconds: Number.parseInt(bodyDataset.sessionTtl || '7200', 10),
+  };
   const chatLog = document.getElementById('chat-log');
   const messageForm = document.getElementById('message-form');
   const messageInput = document.getElementById('message-input');
@@ -311,5 +315,3 @@
   messageInput.addEventListener('input', handleInput);
   window.addEventListener('load', bootstrap);
 })();
-
-
