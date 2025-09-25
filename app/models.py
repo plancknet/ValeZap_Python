@@ -8,7 +8,6 @@ from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
-
 class Sender(enum.Enum):
     PLAYER = "player"
     VALEZAP = "valezap"
