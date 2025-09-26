@@ -17,9 +17,6 @@
   let sessionToken = null;
   let playerId = null;
   let conversationEnded = false;
-  let isLoadingHistory = false;
-  let historySignature = '';
-  let pendingHistoryTimer = null;
 
   const phonePattern = /^[1-9]\d{7,14}$/;
 
@@ -112,6 +109,7 @@
 
     chatLog.appendChild(clone);
     chatLog.scrollTop = chatLog.scrollHeight;
+    return bubble;
   }
 
   function renderMessages(messages) {
@@ -150,28 +148,8 @@
 
   function endConversation() {
     conversationEnded = true;
-    cancelPendingHistory();
     lockInput();
     updateStatus('Conversa encerrada. Obrigado!', 'success');
-  }
-
-  function cancelPendingHistory() {
-    if (pendingHistoryTimer) {
-      window.clearTimeout(pendingHistoryTimer);
-      pendingHistoryTimer = null;
-    }
-  }
-
-  function scheduleHistoryOnce(delayMs) {
-    cancelPendingHistory();
-    pendingHistoryTimer = window.setTimeout(async function () {
-      pendingHistoryTimer = null;
-      try {
-        await loadHistory();
-      } catch (error) {
-        console.warn('Atualizacao de historico falhou', error);
-      }
-    }, delayMs);
   }
 
   function getPlayerFromUrl() {
@@ -266,36 +244,25 @@
   }
 
   async function loadHistory() {
-    if (!sessionToken || isLoadingHistory) {
+    if (!sessionToken) {
       return;
     }
-    isLoadingHistory = true;
-    try {
-      const response = await fetch('/api/messages?session_token=' + encodeURIComponent(sessionToken));
-      if (!response.ok) {
-        throw new Error('Falha ao carregar mensagens anteriores');
-      }
-      const payload = await response.json();
-      const normalised = (payload.messages || []).map(function (message) {
-        return {
-          id: message.id,
-          sender: (message.sender ? String(message.sender).toLowerCase() : 'valezap'),
-          content: message.content || '',
-          created_at: message.created_at,
-        };
-      });
-      const signature = JSON.stringify(normalised.map(function (item) {
-        return [item.id, item.sender, item.content, item.created_at];
-      }));
-      if (signature !== historySignature) {
-        historySignature = signature;
-        renderMessages(normalised);
-      }
-      if (payload.is_active === false) {
-        endConversation();
-      }
-    } finally {
-      isLoadingHistory = false;
+    const response = await fetch('/api/messages?session_token=' + encodeURIComponent(sessionToken));
+    if (!response.ok) {
+      throw new Error('Falha ao carregar mensagens anteriores');
+    }
+    const payload = await response.json();
+    const normalised = (payload.messages || []).map(function (message) {
+      return {
+        id: message.id,
+        sender: (message.sender ? String(message.sender).toLowerCase() : 'valezap'),
+        content: message.content || '',
+        created_at: message.created_at,
+      };
+    });
+    renderMessages(normalised);
+    if (payload.is_active === false) {
+      endConversation();
     }
   }
 
@@ -324,12 +291,11 @@
     lockInput();
     updateStatus('Enviando...', 'info');
 
-    const playerMessage = {
+    const pendingBubble = appendMessage({
       sender: 'player',
       content: rawMessage,
       created_at: new Date().toISOString(),
-    };
-    appendMessage(playerMessage);
+    });
     messageInput.value = '';
     autoResizeTextarea();
 
@@ -350,6 +316,17 @@
 
       const payload = await response.json();
 
+      if (payload.player_message && pendingBubble) {
+        const contentEl = pendingBubble.querySelector('.message-content');
+        const timeEl = pendingBubble.querySelector('.message-time');
+        if (contentEl && payload.player_message.content) {
+          contentEl.innerHTML = applyFormatting(payload.player_message.content);
+        }
+        if (timeEl && payload.player_message.created_at) {
+          timeEl.textContent = formatTime(payload.player_message.created_at);
+        }
+      }
+
       if (payload.valezap_message) {
         const valezapMessage = {
           sender: (payload.valezap_message.sender ? String(payload.valezap_message.sender).toLowerCase() : 'valezap'),
@@ -357,11 +334,9 @@
           created_at: payload.valezap_message.created_at,
         };
         appendMessage(valezapMessage);
-        cancelPendingHistory();
-        await loadHistory();
-      } else {
-        scheduleHistoryOnce(2000);
       }
+
+      await loadHistory();
 
       if (payload.ended) {
         endConversation();
@@ -370,6 +345,9 @@
         unlockInput();
       }
     } catch (error) {
+      if (pendingBubble && pendingBubble.remove) {
+        pendingBubble.remove();
+      }
       updateStatus('Nao foi possivel entregar a mensagem. Tente novamente.', 'error');
       console.error(error);
       unlockInput();
@@ -397,7 +375,6 @@
       await loadHistory();
 
       sessionToken = sessionData.session_token;
-      initializing = false;
       unlockInput();
     } catch (error) {
       console.error('Falha ao inicializar o ValeZap', error);
