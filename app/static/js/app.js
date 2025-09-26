@@ -19,8 +19,11 @@
   let playerId = null;
   let conversationEnded = false;
   let initializing = true;
-  let pollTimer = null;
   let isLoadingHistory = false;
+  let historyTimeout = null;
+  let historyRetries = 0;
+  const maxHistoryRetries = 6;
+  let lastMessagesKey = '';
 
   function normalisePlayerId(raw) {
     if (!raw) {
@@ -51,27 +54,6 @@
     return normalisePlayerId(fallback) || '5511999999999';
   }
 
-  function startPolling() {
-    stopPolling();
-    pollTimer = window.setInterval(async () => {
-      if (!sessionToken || conversationEnded) {
-        return;
-      }
-      try {
-        await loadHistory();
-      } catch (error) {
-        console.warn('Falha ao atualizar mensagens automaticamente', error);
-      }
-    }, 4000);
-  }
-
-  function stopPolling() {
-    if (pollTimer) {
-      window.clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
-
   function escapeHtml(value) {
     return value
       .replace(/&/g, '&amp;')
@@ -82,7 +64,7 @@
   }
 
   function applyFormatting(raw) {
-    let safe = escapeHtml(raw);
+    let safe = escapeHtml(raw || '');
 
     safe = safe.replace(/```([\s\S]+?)```/g, function (_, code) {
       return '<pre><code>' + code + '</code></pre>';
@@ -97,7 +79,10 @@
   }
 
   function formatTime(isoString) {
-    const date = isoString ? new Date(isoString) : new Date();
+    if (!isoString) {
+      return '';
+    }
+    const date = new Date(isoString);
     if (Number.isNaN(date.getTime())) {
       return '';
     }
@@ -120,17 +105,18 @@
       throw new Error('Estrutura do template de mensagem invalida');
     }
 
+    const sender = (message && message.sender ? String(message.sender).toLowerCase() : 'valezap');
     const messageContent = bubble.querySelector('.message-content');
     const messageTime = bubble.querySelector('.message-time');
 
-    const messageClass = message.sender === 'player' ? 'message--player' : 'message--valezap';
+    const messageClass = sender === 'player' ? 'message--player' : 'message--valezap';
     bubble.classList.add(messageClass);
 
     if (messageContent) {
-      messageContent.innerHTML = applyFormatting(message.content);
+      messageContent.innerHTML = applyFormatting(message ? message.content : '');
     }
     if (messageTime) {
-      messageTime.textContent = formatTime(message.created_at);
+      messageTime.textContent = formatTime(message ? message.created_at : null);
     }
 
     chatLog.appendChild(clone);
@@ -164,6 +150,13 @@
     messageInput.disabled = true;
   }
 
+  function clearHistoryTimer() {
+    if (historyTimeout) {
+      window.clearTimeout(historyTimeout);
+      historyTimeout = null;
+    }
+  }
+
   function unlockInput() {
     if (!conversationEnded) {
       sendButton.disabled = false;
@@ -174,7 +167,7 @@
 
   function endConversation() {
     conversationEnded = true;
-    stopPolling();
+    clearHistoryTimer();
     lockInput();
     updateStatus('Conversa encerrada. Obrigado!', 'success');
   }
@@ -272,7 +265,7 @@
 
   async function loadHistory() {
     if (!sessionToken || isLoadingHistory) {
-      return;
+      return { changed: false };
     }
     isLoadingHistory = true;
     try {
@@ -281,13 +274,69 @@
         throw new Error('Falha ao carregar mensagens anteriores');
       }
       const payload = await response.json();
-      renderMessages(payload.messages || []);
+      const rawMessages = payload.messages || [];
+      const normalised = rawMessages.map(function (message) {
+        return {
+          id: message.id,
+          sender: (message.sender ? String(message.sender).toLowerCase() : 'valezap'),
+          content: message.content || '',
+          created_at: message.created_at,
+        };
+      });
+      const key = JSON.stringify(normalised.map(function (message) {
+        return [message.id, message.sender, message.content, message.created_at];
+      }));
+      const changed = key !== lastMessagesKey;
+      if (changed) {
+        lastMessagesKey = key;
+        renderMessages(normalised);
+      }
+      if (normalised.length) {
+        const lastMessage = normalised[normalised.length - 1];
+        if (lastMessage.sender === 'valezap') {
+          historyRetries = 0;
+        }
+      }
       if (payload.is_active === false) {
         endConversation();
       }
+      return { changed };
     } finally {
       isLoadingHistory = false;
     }
+  }
+
+  function scheduleHistoryRefresh(force) {
+    if (conversationEnded) {
+      return;
+    }
+    if (force) {
+      historyRetries = 0;
+      clearHistoryTimer();
+    } else if (historyTimeout) {
+      return;
+    }
+    if (historyRetries >= maxHistoryRetries) {
+      return;
+    }
+    historyRetries += 1;
+    historyTimeout = window.setTimeout(async () => {
+      historyTimeout = null;
+      let changed = false;
+      try {
+        const result = await loadHistory();
+        changed = !!(result && result.changed);
+      } catch (error) {
+        console.warn('Falha ao atualizar mensagens automaticamente', error);
+      } finally {
+        if (changed) {
+          historyRetries = 0;
+        }
+        if (!conversationEnded && historyRetries < maxHistoryRetries && !changed) {
+          scheduleHistoryRefresh(false);
+        }
+      }
+    }, 2000);
   }
 
   function autoResizeTextarea() {
@@ -353,7 +402,17 @@
       }
 
       if (payload.valezap_message) {
-        appendMessage(payload.valezap_message);
+        const message = {
+          sender: (payload.valezap_message.sender ? String(payload.valezap_message.sender).toLowerCase() : 'valezap'),
+          content: payload.valezap_message.content || '',
+          created_at: payload.valezap_message.created_at,
+        };
+        appendMessage(message);
+        historyRetries = 0;
+        clearHistoryTimer();
+        await loadHistory();
+      } else {
+        scheduleHistoryRefresh(true);
       }
 
       if (payload.ended) {
@@ -362,8 +421,6 @@
         updateStatus('Mensagem entregue.', 'success');
         unlockInput();
       }
-
-      await loadHistory();
     } catch (error) {
       if (pendingMessage && pendingMessage.remove) {
         pendingMessage.remove();
@@ -397,7 +454,6 @@
       sessionToken = sessionData.session_token;
       initializing = false;
       unlockInput();
-      startPolling();
     } catch (error) {
       console.error('Falha ao inicializar o ValeZap', error);
       setConnectionState('offline');
