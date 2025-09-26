@@ -1,12 +1,11 @@
 (() => {
-  const bodyDataset = (document.body && document.body.dataset) || {};
+  const data = (document.body && document.body.dataset) || {};
   const config = {
-    maxMessageLength: Number.parseInt(bodyDataset.maxMessageLength || '700', 10),
-    sessionTtlSeconds: Number.parseInt(bodyDataset.sessionTtl || '7200', 10),
+    maxMessageLength: Number.parseInt(data.maxMessageLength || '700', 10),
+    sessionTtlSeconds: Number.parseInt(data.sessionTtl || '7200', 10),
   };
 
   const chatLog = document.getElementById('chat-log');
-  const phonePattern = /^[1-9]\d{7,14}$/;
   const messageForm = document.getElementById('message-form');
   const messageInput = document.getElementById('message-input');
   const sendButton = messageForm.querySelector('.send-button');
@@ -18,19 +17,17 @@
   let sessionToken = null;
   let playerId = null;
   let conversationEnded = false;
-  let initializing = true;
   let isLoadingHistory = false;
-  let historyTimeout = null;
-  let historyRetries = 0;
-  const maxHistoryRetries = 6;
-  let lastMessagesKey = '';
+  let historySignature = '';
+  let pendingHistoryTimer = null;
+
+  const phonePattern = /^[1-9]\d{7,14}$/;
 
   function normalisePlayerId(raw) {
     if (!raw) {
       return null;
     }
-    const cleaned = String(raw).trim();
-    const digits = cleaned.replace(/\D/g, '');
+    const digits = String(raw).replace(/\D/g, '');
     if (!digits || digits.charAt(0) === '0') {
       return null;
     }
@@ -65,7 +62,6 @@
 
   function applyFormatting(raw) {
     let safe = escapeHtml(raw || '');
-
     safe = safe.replace(/```([\s\S]+?)```/g, function (_, code) {
       return '<pre><code>' + code + '</code></pre>';
     });
@@ -74,7 +70,6 @@
     safe = safe.replace(/_(.+?)_/g, '<em>$1</em>');
     safe = safe.replace(/~(.+?)~/g, '<del>$1</del>');
     safe = safe.replace(/\n/g, '<br />');
-
     return safe;
   }
 
@@ -83,10 +78,9 @@
       return '';
     }
     const date = new Date(isoString);
-    if (Number.isNaN(date.getTime())) {
-      return '';
-    }
-    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return Number.isNaN(date.getTime())
+      ? ''
+      : date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   }
 
   function ensureTemplate() {
@@ -100,7 +94,6 @@
     const baseTemplate = ensureTemplate();
     const clone = baseTemplate.cloneNode(true);
     const bubble = clone.classList.contains('message') ? clone : clone.querySelector('.message');
-
     if (!bubble) {
       throw new Error('Estrutura do template de mensagem invalida');
     }
@@ -109,9 +102,7 @@
     const messageContent = bubble.querySelector('.message-content');
     const messageTime = bubble.querySelector('.message-time');
 
-    const messageClass = sender === 'player' ? 'message--player' : 'message--valezap';
-    bubble.classList.add(messageClass);
-
+    bubble.classList.add(sender === 'player' ? 'message--player' : 'message--valezap');
     if (messageContent) {
       messageContent.innerHTML = applyFormatting(message ? message.content : '');
     }
@@ -121,7 +112,6 @@
 
     chatLog.appendChild(clone);
     chatLog.scrollTop = chatLog.scrollHeight;
-    return bubble;
   }
 
   function renderMessages(messages) {
@@ -150,13 +140,6 @@
     messageInput.disabled = true;
   }
 
-  function clearHistoryTimer() {
-    if (historyTimeout) {
-      window.clearTimeout(historyTimeout);
-      historyTimeout = null;
-    }
-  }
-
   function unlockInput() {
     if (!conversationEnded) {
       sendButton.disabled = false;
@@ -167,9 +150,28 @@
 
   function endConversation() {
     conversationEnded = true;
-    clearHistoryTimer();
+    cancelPendingHistory();
     lockInput();
     updateStatus('Conversa encerrada. Obrigado!', 'success');
+  }
+
+  function cancelPendingHistory() {
+    if (pendingHistoryTimer) {
+      window.clearTimeout(pendingHistoryTimer);
+      pendingHistoryTimer = null;
+    }
+  }
+
+  function scheduleHistoryOnce(delayMs) {
+    cancelPendingHistory();
+    pendingHistoryTimer = window.setTimeout(async function () {
+      pendingHistoryTimer = null;
+      try {
+        await loadHistory();
+      } catch (error) {
+        console.warn('Atualizacao de historico falhou', error);
+      }
+    }, delayMs);
   }
 
   function getPlayerFromUrl() {
@@ -265,7 +267,7 @@
 
   async function loadHistory() {
     if (!sessionToken || isLoadingHistory) {
-      return { changed: false };
+      return;
     }
     isLoadingHistory = true;
     try {
@@ -274,8 +276,7 @@
         throw new Error('Falha ao carregar mensagens anteriores');
       }
       const payload = await response.json();
-      const rawMessages = payload.messages || [];
-      const normalised = rawMessages.map(function (message) {
+      const normalised = (payload.messages || []).map(function (message) {
         return {
           id: message.id,
           sender: (message.sender ? String(message.sender).toLowerCase() : 'valezap'),
@@ -283,60 +284,19 @@
           created_at: message.created_at,
         };
       });
-      const key = JSON.stringify(normalised.map(function (message) {
-        return [message.id, message.sender, message.content, message.created_at];
+      const signature = JSON.stringify(normalised.map(function (item) {
+        return [item.id, item.sender, item.content, item.created_at];
       }));
-      const changed = key !== lastMessagesKey;
-      if (changed) {
-        lastMessagesKey = key;
+      if (signature !== historySignature) {
+        historySignature = signature;
         renderMessages(normalised);
-      }
-      if (normalised.length) {
-        const lastMessage = normalised[normalised.length - 1];
-        if (lastMessage.sender === 'valezap') {
-          historyRetries = 0;
-        }
       }
       if (payload.is_active === false) {
         endConversation();
       }
-      return { changed };
     } finally {
       isLoadingHistory = false;
     }
-  }
-
-  function scheduleHistoryRefresh(force) {
-    if (conversationEnded) {
-      return;
-    }
-    if (force) {
-      historyRetries = 0;
-      clearHistoryTimer();
-    } else if (historyTimeout) {
-      return;
-    }
-    if (historyRetries >= maxHistoryRetries) {
-      return;
-    }
-    historyRetries += 1;
-    historyTimeout = window.setTimeout(async () => {
-      historyTimeout = null;
-      let changed = false;
-      try {
-        const result = await loadHistory();
-        changed = !!(result && result.changed);
-      } catch (error) {
-        console.warn('Falha ao atualizar mensagens automaticamente', error);
-      } finally {
-        if (changed) {
-          historyRetries = 0;
-        }
-        if (!conversationEnded && historyRetries < maxHistoryRetries && !changed) {
-          scheduleHistoryRefresh(false);
-        }
-      }
-    }, 2000);
   }
 
   function autoResizeTextarea() {
@@ -369,7 +329,7 @@
       content: rawMessage,
       created_at: new Date().toISOString(),
     };
-    const pendingMessage = appendMessage(playerMessage);
+    appendMessage(playerMessage);
     messageInput.value = '';
     autoResizeTextarea();
 
@@ -390,29 +350,17 @@
 
       const payload = await response.json();
 
-      if (payload.player_message && pendingMessage) {
-        const contentEl = pendingMessage.querySelector('.message-content');
-        const timeEl = pendingMessage.querySelector('.message-time');
-        if (payload.player_message.content && contentEl) {
-          contentEl.innerHTML = applyFormatting(payload.player_message.content);
-        }
-        if (payload.player_message.created_at && timeEl) {
-          timeEl.textContent = formatTime(payload.player_message.created_at);
-        }
-      }
-
       if (payload.valezap_message) {
-        const message = {
+        const valezapMessage = {
           sender: (payload.valezap_message.sender ? String(payload.valezap_message.sender).toLowerCase() : 'valezap'),
           content: payload.valezap_message.content || '',
           created_at: payload.valezap_message.created_at,
         };
-        appendMessage(message);
-        historyRetries = 0;
-        clearHistoryTimer();
+        appendMessage(valezapMessage);
+        cancelPendingHistory();
         await loadHistory();
       } else {
-        scheduleHistoryRefresh(true);
+        scheduleHistoryOnce(2000);
       }
 
       if (payload.ended) {
@@ -422,9 +370,6 @@
         unlockInput();
       }
     } catch (error) {
-      if (pendingMessage && pendingMessage.remove) {
-        pendingMessage.remove();
-      }
       updateStatus('Nao foi possivel entregar a mensagem. Tente novamente.', 'error');
       console.error(error);
       unlockInput();
