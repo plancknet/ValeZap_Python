@@ -33,7 +33,7 @@ def load_config() -> type:
         )
         REMOTE_WEBHOOK_TIMEOUT: float = float(os.environ.get("VALEZAP_BACKEND_TIMEOUT", "15"))
         REMOTE_WEBHOOK_API_KEY: str | None = os.environ.get("VALEZAP_BACKEND_API_KEY")
-        WEBHOOK_API_KEY: str = os.environ.get("VALEZAP_WEBHOOK_API_KEY", "change-me")
+        WEBHOOK_API_KEY: str = os.environ.get("VALEZAP_WEBHOOK_API_KEY", "apikey")
         MAX_MESSAGE_LENGTH: int = str_to_int(os.environ.get("VALEZAP_MAX_MESSAGE_LENGTH"), 700)
         MIN_MESSAGE_LENGTH: int = 1
         SESSION_TTL: timedelta = timedelta(hours=str_to_int(os.environ.get("VALEZAP_SESSION_HOURS"), 2))

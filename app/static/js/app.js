@@ -14,6 +14,14 @@
   const connectionStatus = document.getElementById('connection-status');
   const template = document.getElementById('message-template');
 
+  const storageKey = 'valezap-session';
+  let sessionToken = null;
+  let playerId = null;
+  let conversationEnded = false;
+  let initializing = true;
+  let pollTimer = null;
+  let isLoadingHistory = false;
+
   function normalisePlayerId(raw) {
     if (!raw) {
       return null;
@@ -43,11 +51,26 @@
     return normalisePlayerId(fallback) || '5511999999999';
   }
 
-  const storageKey = 'valezap-session';
-  let sessionToken = null;
-  let playerId = null;
-  let conversationEnded = false;
-  let initializing = true;
+  function startPolling() {
+    stopPolling();
+    pollTimer = window.setInterval(async () => {
+      if (!sessionToken || conversationEnded) {
+        return;
+      }
+      try {
+        await loadHistory();
+      } catch (error) {
+        console.warn('Falha ao atualizar mensagens automaticamente', error);
+      }
+    }, 4000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
 
   function escapeHtml(value) {
     return value
@@ -115,6 +138,13 @@
     return bubble;
   }
 
+  function renderMessages(messages) {
+    chatLog.innerHTML = '';
+    messages.forEach(function (message) {
+      appendMessage(message);
+    });
+  }
+
   function updateStatus(text, type) {
     if (!text) {
       formStatus.textContent = '';
@@ -144,6 +174,7 @@
 
   function endConversation() {
     conversationEnded = true;
+    stopPolling();
     lockInput();
     updateStatus('Conversa encerrada. Obrigado!', 'success');
   }
@@ -240,20 +271,22 @@
   }
 
   async function loadHistory() {
-    if (!sessionToken) {
+    if (!sessionToken || isLoadingHistory) {
       return;
     }
-    const response = await fetch('/api/messages?session_token=' + encodeURIComponent(sessionToken));
-    if (!response.ok) {
-      throw new Error('Falha ao carregar mensagens anteriores');
-    }
-    const payload = await response.json();
-    chatLog.innerHTML = '';
-    payload.messages.forEach(function (message) {
-      appendMessage(message);
-    });
-    if (payload.is_active === false) {
-      endConversation();
+    isLoadingHistory = true;
+    try {
+      const response = await fetch('/api/messages?session_token=' + encodeURIComponent(sessionToken));
+      if (!response.ok) {
+        throw new Error('Falha ao carregar mensagens anteriores');
+      }
+      const payload = await response.json();
+      renderMessages(payload.messages || []);
+      if (payload.is_active === false) {
+        endConversation();
+      }
+    } finally {
+      isLoadingHistory = false;
     }
   }
 
@@ -329,6 +362,8 @@
         updateStatus('Mensagem entregue.', 'success');
         unlockInput();
       }
+
+      await loadHistory();
     } catch (error) {
       if (pendingMessage && pendingMessage.remove) {
         pendingMessage.remove();
@@ -362,6 +397,7 @@
       sessionToken = sessionData.session_token;
       initializing = false;
       unlockInput();
+      startPolling();
     } catch (error) {
       console.error('Falha ao inicializar o ValeZap', error);
       setConnectionState('offline');

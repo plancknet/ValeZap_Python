@@ -167,65 +167,67 @@ def send_message():
     duration = monotonic() - start
 
     backend_message = backend_response.get("mensagem")
-    if not isinstance(backend_message, str):
-        current_app.logger.error(
-            "Resposta invalida do backend",
+    valezap_payload: dict[str, str] | None = None
+    ended = False
+
+    if isinstance(backend_message, str):
+        backend_message = backend_message.strip()
+        if backend_message:
+            received_at = datetime.now(timezone.utc)
+
+            current_app.logger.info(
+                "Resposta recebida do backend",
+                extra={
+                    "event": "backend.response.received",
+                    "session_token": session_token,
+                    "player": player,
+                    "duration_ms": round(duration * 1000, 2),
+                },
+            )
+
+            with session_scope(session_identifier=session_token) as db:
+                chat_session = _load_session(db, session_token)
+                if chat_session is None:
+                    abort(404, "Sessao nao encontrada")
+                if chat_session.player_id != player:
+                    abort(403, "Player nao autorizado para esta sessao")
+
+                incoming = Message(
+                    session_token=session_token,
+                    sender=Sender.VALEZAP,
+                    content=backend_message,
+                    created_at=received_at,
+                )
+                db.add(incoming)
+
+                ended = is_end_of_conversation(backend_message)
+                if ended:
+                    chat_session.is_active = False
+                    chat_session.ended_at = received_at
+
+            if ended:
+                current_app.logger.info(
+                    "Sessao encerrada pelo backend",
+                    extra={
+                        "event": "session.ended",
+                        "session_token": session_token,
+                        "player": player,
+                    },
+                )
+
+            valezap_payload = {
+                "sender": Sender.VALEZAP.value.lower(),
+                "content": backend_message,
+                "created_at": received_at.isoformat(),
+            }
+    else:
+        current_app.logger.debug(
+            "Backend respondeu sem mensagem",
             extra={
-                "event": "backend.response.invalid",
+                "event": "backend.response.ack",
                 "session_token": session_token,
                 "player": player,
                 "payload": backend_response,
-            },
-        )
-        abort(502, "Resposta invalida do backend")
-
-    backend_message = backend_message.strip()
-    received_at = datetime.now(timezone.utc)
-
-    current_app.logger.info(
-        "Resposta recebida do backend",
-        extra={
-            "event": "backend.response.received",
-            "session_token": session_token,
-            "player": player,
-            "duration_ms": round(duration * 1000, 2),
-        },
-    )
-
-    valezap_payload = {
-        "sender": Sender.VALEZAP.value.lower(),
-        "content": backend_message,
-        "created_at": received_at.isoformat(),
-    }
-
-    ended = is_end_of_conversation(backend_message)
-
-    with session_scope(session_identifier=session_token) as db:
-        chat_session = _load_session(db, session_token)
-        if chat_session is None:
-            abort(404, "Sessao nao encontrada")
-        if chat_session.player_id != player:
-            abort(403, "Player nao autorizado para esta sessao")
-
-        incoming = Message(
-            session_token=session_token,
-            sender=Sender.VALEZAP,
-            content=backend_message,
-            created_at=received_at,
-        )
-        db.add(incoming)
-
-        if ended:
-            chat_session.is_active = False
-            chat_session.ended_at = received_at
-
-    if ended:
-        current_app.logger.info(
-            "Sessao encerrada pelo backend",
-            extra={
-                "event": "session.ended",
-                "session_token": session_token,
-                "player": player,
             },
         )
 
@@ -236,7 +238,3 @@ def send_message():
     }
 
     return jsonify(response_payload), 201
-
-
-
-
